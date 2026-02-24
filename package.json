@@ -1,0 +1,9 @@
+{
+  "name": "track-expense",
+  "version": "2.0.0",
+  "description": "Personal Finance Management PWA",
+  "scripts": {
+    "dev": "npx serve . -p 3000 -s",
+    "start": "npx serve . -p 3000 -s"
+  }
+}
