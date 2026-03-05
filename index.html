@@ -19,11 +19,85 @@ input,select,textarea,button{font-family:inherit;font-size:inherit}
 </head>
 <body>
 <div id="root"></div>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+<script>
+const firebaseConfig={apiKey:"AIzaSyCvMkvLYQFi1fNa2lWp1a45E3K5h-DTtPw",authDomain:"myexpense-project.firebaseapp.com",databaseURL:"https://myexpense-project-default-rtdb.firebaseio.com",projectId:"myexpense-project",storageBucket:"myexpense-project.firebasestorage.app",messagingSenderId:"1059514064032",appId:"1:1059514064032:web:105733e8021c8087b73dc5",measurementId:"G-8TS0ERZVC0"};
+firebase.initializeApp(firebaseConfig);
+const fbAuth=firebase.auth();
+const fbDb=firebase.database();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <script type="text/babel">
-const{useState,useEffect,useCallback,useMemo,createContext,useContext}=React;
+const{useState,useEffect,useCallback,useMemo,createContext,useContext,useRef}=React;
+
+/* Firebase Helpers */
+const fbSave=(uid,data)=>{if(uid)fbDb.ref('users/'+uid+'/data').set(JSON.stringify(data))};
+const fbLoad=(uid,cb)=>{if(uid)fbDb.ref('users/'+uid+'/data').on('value',snap=>{const v=snap.val();if(v)cb(JSON.parse(v))})};
+const fbOff=(uid)=>{if(uid)fbDb.ref('users/'+uid+'/data').off()};
+
+/* Auth Context */
+const AuthCx=createContext(null);
+const useAuth=()=>useContext(AuthCx);
+
+function AuthProvider({children}){
+const[user,setUser]=useState(null);const[loading,setLoading]=useState(true);const[authMode,setAuthMode]=useState('login');
+const[email,setEmail]=useState('');const[pass,setPass]=useState('');const[phone,setPhone]=useState('');const[otp,setOtp]=useState('');
+const[otpSent,setOtpSent]=useState(false);const[err,setErr]=useState('');const[method,setMethod]=useState('email');
+const[confirmResult,setConfirmResult]=useState(null);const recaptchaRef=useRef(null);
+
+useEffect(()=>{const unsub=fbAuth.onAuthStateChanged(u=>{setUser(u);setLoading(false)});return unsub},[]);
+
+const signUpEmail=async()=>{setErr('');try{await fbAuth.createUserWithEmailAndPassword(email,pass)}catch(e){setErr(e.message)}};
+const signInEmail=async()=>{setErr('');try{await fbAuth.signInWithEmailAndPassword(email,pass)}catch(e){setErr(e.message)}};
+const sendOtp=async()=>{setErr('');try{
+if(!recaptchaRef.current){recaptchaRef.current=new firebase.auth.RecaptchaVerifier('recaptcha-container',{size:'invisible'})}
+const ph=phone.startsWith('+')?phone:'+91'+phone;
+const result=await fbAuth.signInWithPhoneNumber(ph,recaptchaRef.current);
+setConfirmResult(result);setOtpSent(true)}catch(e){setErr(e.message);if(recaptchaRef.current){recaptchaRef.current.clear();recaptchaRef.current=null}}};
+const verifyOtp=async()=>{setErr('');try{await confirmResult.confirm(otp)}catch(e){setErr(e.message)}};
+const logout=()=>{fbAuth.signOut()};
+
+if(loading)return React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'var(--bg)',fontFamily:'var(--fp)'}},'Loading...');
+
+if(!user)return React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'linear-gradient(135deg,#f0f5f0 0%,#e8f0e8 100%)',fontFamily:"'DM Sans',sans-serif",padding:16}},
+React.createElement('div',{style:{background:'#fff',borderRadius:20,padding:'32px 28px',width:'100%',maxWidth:400,boxShadow:'0 8px 32px rgba(0,0,0,.08)',border:'1px solid #e8f0e8'}},
+React.createElement('div',{style:{textAlign:'center',marginBottom:28}},
+React.createElement('div',{style:{width:56,height:56,borderRadius:14,background:'#4a9e6a',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 12px',color:'#fff',fontSize:26,fontWeight:700}},'₹'),
+React.createElement('h1',{style:{fontSize:22,fontWeight:700,color:'#2d3b2d',margin:0}},'Track Expense'),
+React.createElement('p',{style:{fontSize:12,color:'#8a9b8a',marginTop:4}},authMode==='login'?'Welcome back! Sign in to continue':'Create your account')),
+React.createElement('div',{style:{display:'flex',gap:0,marginBottom:20,background:'#f5f8f5',borderRadius:10,padding:3}},
+React.createElement('button',{onClick:()=>{setMethod('email');setErr('');setOtpSent(false)},style:{flex:1,padding:'8px 0',borderRadius:8,border:'none',fontWeight:600,fontSize:13,cursor:'pointer',background:method==='email'?'#4a9e6a':'transparent',color:method==='email'?'#fff':'#5a6b5a'}},'Email'),
+React.createElement('button',{onClick:()=>{setMethod('phone');setErr('');setOtpSent(false)},style:{flex:1,padding:'8px 0',borderRadius:8,border:'none',fontWeight:600,fontSize:13,cursor:'pointer',background:method==='phone'?'#4a9e6a':'transparent',color:method==='phone'?'#fff':'#5a6b5a'}},'Phone')),
+method==='email'?React.createElement('div',null,
+React.createElement('label',{style:{display:'block',fontSize:10,fontWeight:700,color:'#5a6b5a',marginBottom:4,textTransform:'uppercase',letterSpacing:'.5px'}},'Email'),
+React.createElement('input',{type:'email',value:email,onChange:e=>setEmail(e.target.value),placeholder:'your@email.com',style:{width:'100%',padding:'10px 12px',background:'#f5f8f5',border:'1px solid #d4e4d4',borderRadius:10,color:'#2d3b2d',outline:'none',marginBottom:12,fontSize:14,boxSizing:'border-box'}}),
+React.createElement('label',{style:{display:'block',fontSize:10,fontWeight:700,color:'#5a6b5a',marginBottom:4,textTransform:'uppercase',letterSpacing:'.5px'}},'Password'),
+React.createElement('input',{type:'password',value:pass,onChange:e=>setPass(e.target.value),placeholder:'Min 6 characters',onKeyDown:e=>{if(e.key==='Enter'){authMode==='login'?signInEmail():signUpEmail()}},style:{width:'100%',padding:'10px 12px',background:'#f5f8f5',border:'1px solid #d4e4d4',borderRadius:10,color:'#2d3b2d',outline:'none',marginBottom:16,fontSize:14,boxSizing:'border-box'}}),
+React.createElement('button',{onClick:authMode==='login'?signInEmail:signUpEmail,style:{width:'100%',padding:'11px',borderRadius:10,border:'none',background:'#4a9e6a',color:'#fff',fontWeight:700,fontSize:14,cursor:'pointer'}},authMode==='login'?'Sign In':'Create Account'))
+:React.createElement('div',null,
+!otpSent?React.createElement('div',null,
+React.createElement('label',{style:{display:'block',fontSize:10,fontWeight:700,color:'#5a6b5a',marginBottom:4,textTransform:'uppercase',letterSpacing:'.5px'}},'Phone Number'),
+React.createElement('div',{style:{display:'flex',gap:6,marginBottom:16}},
+React.createElement('span',{style:{padding:'10px 8px',background:'#f5f8f5',border:'1px solid #d4e4d4',borderRadius:10,color:'#5a6b5a',fontSize:13}},'+91'),
+React.createElement('input',{type:'tel',value:phone,onChange:e=>setPhone(e.target.value),placeholder:'9876543210',onKeyDown:e=>{if(e.key==='Enter')sendOtp()},style:{flex:1,padding:'10px 12px',background:'#f5f8f5',border:'1px solid #d4e4d4',borderRadius:10,color:'#2d3b2d',outline:'none',fontSize:14}})),
+React.createElement('button',{onClick:sendOtp,style:{width:'100%',padding:'11px',borderRadius:10,border:'none',background:'#4a9e6a',color:'#fff',fontWeight:700,fontSize:14,cursor:'pointer'}},'Send OTP'))
+:React.createElement('div',null,
+React.createElement('label',{style:{display:'block',fontSize:10,fontWeight:700,color:'#5a6b5a',marginBottom:4,textTransform:'uppercase',letterSpacing:'.5px'}},'Enter OTP'),
+React.createElement('input',{type:'text',value:otp,onChange:e=>setOtp(e.target.value),placeholder:'6-digit OTP',onKeyDown:e=>{if(e.key==='Enter')verifyOtp()},style:{width:'100%',padding:'10px 12px',background:'#f5f8f5',border:'1px solid #d4e4d4',borderRadius:10,color:'#2d3b2d',outline:'none',marginBottom:16,fontSize:14,boxSizing:'border-box',letterSpacing:4,textAlign:'center'}}),
+React.createElement('button',{onClick:verifyOtp,style:{width:'100%',padding:'11px',borderRadius:10,border:'none',background:'#4a9e6a',color:'#fff',fontWeight:700,fontSize:14,cursor:'pointer'}},'Verify OTP'),
+React.createElement('button',{onClick:()=>{setOtpSent(false);setOtp('')},style:{width:'100%',padding:'8px',marginTop:6,borderRadius:10,border:'none',background:'transparent',color:'#5a6b5a',fontSize:12,cursor:'pointer'}},'Change number'))),
+err&&React.createElement('div',{style:{marginTop:12,padding:'8px 12px',background:'rgba(239,68,68,.08)',border:'1px solid rgba(239,68,68,.2)',borderRadius:8,color:'#ef4444',fontSize:12}},err),
+React.createElement('div',{style:{textAlign:'center',marginTop:16}},
+React.createElement('span',{style:{fontSize:12,color:'#8a9b8a'}},authMode==='login'?'No account? ':'Already have an account? '),
+React.createElement('button',{onClick:()=>{setAuthMode(authMode==='login'?'register':'login');setErr('')},style:{background:'none',border:'none',color:'#4a9e6a',fontWeight:700,fontSize:12,cursor:'pointer'}},authMode==='login'?'Register':'Sign In')),
+React.createElement('div',{id:'recaptcha-container'})));
+
+return React.createElement(AuthCx.Provider,{value:{user,logout}},children)}
+
 const TH={
 'Sage':{'--bg':'#f0f5f0','--bg2':'#e8f0e8','--card':'#fff','--inp':'#f5f8f5','--tx':'#2d3b2d','--tx2':'#5a6b5a','--txm':'#8a9b8a','--ac':'#4a9e6a','--acl':'rgba(74,158,106,.12)','--brd':'#d4e4d4','--sbg':'#f0f5f0'},
 'Midnight':{'--bg':'#0f172a','--bg2':'#1e293b','--card':'#1e293b','--inp':'#334155','--tx':'#f1f5f9','--tx2':'#94a3b8','--txm':'#64748b','--ac':'#38bdf8','--acl':'rgba(56,189,248,.12)','--brd':'#334155','--sbg':'#1e293b'},
@@ -51,8 +125,10 @@ const II={dash:ic('<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y
 
 const Cx=createContext(null);const useA=()=>useContext(Cx);
 function Prov({children}){
-const[d,setD]=useState(LD);const[tab,setTab]=useState('dashboard');const[sb,setSb]=useState(window.innerWidth>768);const[nf,setNf]=useState(null);
-useEffect(()=>{SD(d)},[d]);
+const{user}=useAuth();
+const[d,setD]=useState(LD);const[tab,setTab]=useState('dashboard');const[sb,setSb]=useState(window.innerWidth>768);const[nf,setNf]=useState(null);const syncRef=useRef(false);
+useEffect(()=>{SD(d);if(user&&syncRef.current)fbSave(user.uid,d)},[d]);
+useEffect(()=>{if(user){fbLoad(user.uid,data=>{const merged={...DD(),...data,settings:{...DD().settings,...(data.settings||{})},user:{...DD().user,...(data.user||{})}};setD(merged);SD(merged);syncRef.current=true});return()=>fbOff(user.uid)}else{syncRef.current=false}},[user]);
 useEffect(()=>{const t=TH[d.settings.theme]||TH.Sage;Object.entries(t).forEach(([k,v])=>document.documentElement.style.setProperty(k,v));const ff=FN[d.settings.fontStyle]||FN['DM Sans'];document.documentElement.style.setProperty('--fp',ff);document.body.style.fontFamily=ff;const fz=FSZ[d.settings.fontSize]||'14px';document.documentElement.style.setProperty('--fs',fz);document.body.style.fontSize=fz},[d.settings.theme,d.settings.fontStyle,d.settings.fontSize]);
 const nt=useCallback((m,t='success')=>{setNf({m,t});setTimeout(()=>setNf(null),3e3)},[]);
 const db=useCallback((bn,a,payType)=>{setD(p=>({...p,savings:p.savings.map(s=>s.bankName===bn?{...s,balance:Math.max(0,s.balance-Number(a)),lastUpdated:new Date().toISOString(),statements:[...(s.statements||[]),{id:gi(),type:'debit',amount:Number(a),desc:payType||'Payment',date:new Date().toISOString()}]}:s)}))},[]);
@@ -108,14 +184,14 @@ return<Md title={titles[type]||'Edit'} onClose={onClose}>
 {type==='fixedSpends'&&<><Fl l="Category"><select value={f.category||''} onChange={e=>u('category',e.target.value)} style={cs.select}><option value="">Select</option>{d.settings.fixedCategories.map(c=><option key={c}>{c}</option>)}</select></Fl><Fl l="Amount"><input type="number" value={f.amount||''} onChange={e=>u('amount',e.target.value)} style={cs.input}/></Fl><Fl l="Date"><input type="date" value={fmtD(f.date)} onChange={e=>u('date',e.target.value)} style={cs.input}/></Fl><Fl l="Payment Mode"><select value={f.paymentMode||''} onChange={e=>u('paymentMode',e.target.value)} style={cs.select}><option value="">Select</option>{d.settings.paymentMethods.map(p=><option key={p}>{p}</option>)}</select></Fl>{BNK(f.paymentMode)&&<Fl l="Bank"><select value={f.bankName||''} onChange={e=>u('bankName',e.target.value)} style={cs.select}><option value="">Select</option>{d.settings.banks.map(b=><option key={b}>{b}</option>)}</select></Fl>}</>}
 {type==='savings'&&<><Fl l="Bank Name"><select value={f.bankName||''} onChange={e=>u('bankName',e.target.value)} style={cs.select}><option value="">Select</option>{d.settings.banks.map(b=><option key={b}>{b}</option>)}</select></Fl><Fl l="Current Balance"><input type="number" value={f.balance||''} onChange={e=>u('balance',e.target.value)} style={cs.input}/></Fl><div style={{padding:10,background:'var(--inp)',borderRadius:9,marginTop:4,border:'1px solid var(--brd)'}}><div style={{fontSize:10,fontWeight:700,color:'var(--txm)',textTransform:'uppercase',marginBottom:4}}>Info</div><div style={{fontSize:12,color:'var(--tx2)'}}>Statements: {(f.statements||[]).length} &middot; Last updated: {fd(f.lastUpdated)}</div></div></>}
 <Bt onClick={save} style={{width:'100%',justifyContent:'center',marginTop:8}}>Save Changes</Bt></Md>}
-function Sidebar(){const{tab,setTab,sb,setSb}=useA();const mob=window.innerWidth<=768;
+function Sidebar(){const{tab,setTab,sb,setSb}=useA();const{logout}=useAuth();const mob=window.innerWidth<=768;
 const nav=[{id:'dashboard',l:'Dashboard',i:II.dash},{id:'expenses',l:'Expenses',i:II.exp},{id:'ccView',l:'Credit Cards',i:II.cc},{id:'emiView',l:'EMIs',i:II.emi},{id:'savings',l:'Savings',i:II.sav},{id:'viewSav',l:'View Savings',i:II.eye},{id:'reports',l:'Reports',i:II.rpt},{div:1},{id:'display',l:'Display',i:II.disp},{id:'profile',l:'User',i:II.user},{id:'settings',l:'Settings',i:II.gear}];
 return<>{mob&&sb&&<div onClick={()=>setSb(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.3)',zIndex:99}}/>}<aside style={{position:'fixed',left:0,top:0,bottom:0,width:'var(--sw)',background:'var(--sbg)',borderRight:'1px solid var(--brd)',zIndex:100,display:'flex',flexDirection:'column',padding:'14px 8px',transform:sb?'translateX(0)':'translateX(-100%)',transition:'transform .3s',overflowY:'auto'}}>
 <div style={{...cs.fb,padding:'2px 10px',marginBottom:20}}><div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:32,height:32,borderRadius:8,background:'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,fontSize:14}}>{'\u20B9'}</div><span style={{fontWeight:700,fontSize:14}}>Track Expense</span></div>{mob&&<button onClick={()=>setSb(false)} style={{background:'none',border:'none',color:'var(--txm)',cursor:'pointer'}}>{II.x}</button>}</div>
 <nav style={{flex:1}}>{nav.map((n,i)=>n.div?<div key={i} style={{height:1,background:'var(--brd)',margin:'10px 8px'}}/>:<button key={n.id} onClick={()=>{setTab(n.id);if(mob)setSb(false)}} style={{width:'100%',display:'flex',alignItems:'center',gap:9,padding:'9px 12px',borderRadius:9,border:'none',background:tab===n.id?'var(--ac)':'transparent',color:tab===n.id?'#fff':'var(--tx2)',fontWeight:tab===n.id?600:500,fontSize:'13px',cursor:'pointer',marginBottom:2}}>{n.i}{n.l}</button>)}</nav>
-<div style={{padding:'10px 12px',borderTop:'1px solid var(--brd)',fontSize:10,color:'var(--txm)'}}>v2.0</div></aside></>}
+<div style={{padding:'10px 12px',borderTop:'1px solid var(--brd)',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:10,color:'var(--txm)'}}>v2.0</span><button onClick={()=>{if(confirm('Sign out?'))logout()}} style={{background:'none',border:'none',color:'var(--err)',cursor:'pointer',fontSize:11,fontWeight:600}}>Sign Out</button></div></aside></>}
 
-function Header(){const{setSb,d}=useA();const now=new Date();const nm=d.user.name||'User';return<header style={{...cs.fb,padding:'12px 18px',borderBottom:'1px solid var(--brd)',background:'var(--card)',position:'sticky',top:0,zIndex:50}}><button onClick={()=>setSb(s=>!s)} style={{background:'none',border:'none',color:'var(--tx)',cursor:'pointer'}}>{II.menu}</button><div style={{textAlign:'right'}}><div style={{fontSize:'13px',fontWeight:700,color:'var(--ac)'}}>Welcome {nm}!</div><div style={{fontSize:'11px',color:'var(--tx2)'}}>{now.toLocaleDateString('en-IN',{weekday:'long'})} &middot; {now.toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'})}</div></div></header>}
+function Header(){const{setSb,d}=useA();const{user}=useAuth();const now=new Date();const nm=d.user.name||'User';return<header style={{...cs.fb,padding:'12px 18px',borderBottom:'1px solid var(--brd)',background:'var(--card)',position:'sticky',top:0,zIndex:50}}><button onClick={()=>setSb(s=>!s)} style={{background:'none',border:'none',color:'var(--tx)',cursor:'pointer'}}>{II.menu}</button><div style={{textAlign:'right'}}><div style={{fontSize:'13px',fontWeight:700,color:'var(--ac)'}}>Welcome {nm}!</div><div style={{fontSize:'11px',color:'var(--tx2)'}}>{now.toLocaleDateString('en-IN',{weekday:'long'})} &middot; {now.toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'})}</div></div></header>}
 
 function Dashboard(){
 const{d,ts,sI}=useA();const now=new Date();const cm=now.getMonth(),cy=now.getFullYear();
@@ -273,7 +349,7 @@ return<div><h2 style={{fontSize:20,fontWeight:700,marginBottom:16}}>Settings</h2
 
 function App(){const{tab,sb}=useA();const pg={dashboard:Dashboard,expenses:Expenses,ccView:CCView,emiView:EMIView,savings:SavPage,viewSav:ViewSav,reports:Reports,display:Display,profile:Profile,settings:Settings};const P=pg[tab]||Dashboard;
 return<div style={{display:'flex',height:'100vh',overflow:'hidden'}}><Sidebar/><div style={{flex:1,marginLeft:sb&&window.innerWidth>768?'var(--sw)':'0',transition:'margin-left .3s',display:'flex',flexDirection:'column',overflow:'hidden'}}><Header/><main style={{flex:1,overflow:'auto',padding:'18px',maxWidth:860,width:'100%',margin:'0 auto'}}><P/></main></div><Noti/></div>}
-ReactDOM.createRoot(document.getElementById('root')).render(<Prov><App/></Prov>);
+ReactDOM.createRoot(document.getElementById('root')).render(<AuthProvider><Prov><App/></Prov></AuthProvider>);
 </script>
 
 <script>
