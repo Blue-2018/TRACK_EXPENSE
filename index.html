@@ -295,8 +295,19 @@ return<Md title="Add Expense" onClose={onClose}>
 
 function Expenses(){const{d,dl}=useA();const[tp,setTp]=useState('expDash');const[show,setShow]=useState(false);const[fy,setFy]=useState(new Date().getFullYear());const[fm,setFm]=useState(new Date().getMonth());const[sp,setSp]=useState(null);const[sp2,setSp2]=useState(null);const[edItem,setEdItem]=useState(null);const[expCat,setExpCat]=useState(null);const now=new Date();
 const tabs=[{id:'expDash',l:'Dashboard'},{id:'expenses',l:'Other'},{id:'creditCards',l:'Credit Card'},{id:'emis',l:'EMI'},{id:'groceries',l:'Grocery'},{id:'fixedSpends',l:'Fixed Spend'}];
-return<div><div style={{...cs.fb,marginBottom:16}}><h2 style={{fontSize:20,fontWeight:700}}>Expenses</h2><Bt onClick={()=>setShow(true)}>{II.plus} Add</Bt></div>
-<div style={{display:'flex',gap:8,marginBottom:14}}><select value={fy} onChange={e=>setFy(Number(e.target.value))} style={{...cs.select,width:85}}>{[2024,2025,2026,2027].map(y=><option key={y}>{y}</option>)}</select><select value={fm} onChange={e=>setFm(Number(e.target.value))} style={{...cs.select,width:120}}>{MO.map((m,i)=><option key={i} value={i}>{m}</option>)}</select></div>
+const prevM=()=>{if(fm===0){setFm(11);setFy(fy-1)}else setFm(fm-1)};
+const nextM=()=>{if(fm===11){setFm(0);setFy(fy+1)}else setFm(fm+1)};
+const isNowE=fm===now.getMonth()&&fy===now.getFullYear();
+const goNowE=()=>{setFm(now.getMonth());setFy(now.getFullYear())};
+return<div><div style={{...cs.fb,marginBottom:12}}><h2 style={{fontSize:20,fontWeight:700}}>Expenses</h2><Bt onClick={()=>setShow(true)}>{II.plus} Add</Bt></div>
+<div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:14}}>
+<button onClick={prevM} style={{background:'var(--inp)',border:'1px solid var(--brd)',borderRadius:8,width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'var(--tx)',fontSize:14,fontWeight:700}}>{'\u25C0'}</button>
+<div style={{textAlign:'center',flex:1}}>
+<div style={{fontSize:16,fontWeight:700}}>{MO[fm]} {fy}</div>
+{isNowE?<div style={{fontSize:9,color:'var(--ac)',fontWeight:600}}>Current Month</div>:<button onClick={goNowE} style={{background:'none',border:'none',color:'var(--ac)',fontSize:9,fontWeight:600,cursor:'pointer',textDecoration:'underline'}}>Go to Current</button>}
+</div>
+<button onClick={nextM} style={{background:'var(--inp)',border:'1px solid var(--brd)',borderRadius:8,width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'var(--tx)',fontSize:14,fontWeight:700}}>{'\u25B6'}</button>
+</div>
 <div style={{display:'flex',gap:3,marginBottom:16,overflowX:'auto'}}>{tabs.map(t=><button key={t.id} onClick={()=>setTp(t.id)} style={{...cs.btn,padding:'6px 12px',fontSize:12,whiteSpace:'nowrap',background:tp===t.id?'var(--ac)':'var(--inp)',color:tp===t.id?'#fff':'var(--tx2)'}}>{t.l}</button>)}</div>
 {tp==='expDash'&&(()=>{
 const cur=d.settings.currency||'\u20B9';
