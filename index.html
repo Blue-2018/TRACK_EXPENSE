@@ -202,7 +202,12 @@ return<>{mob&&sb&&<div onClick={()=>setSb(false)} style={{position:'fixed',inset
 function Header(){const{setSb,d}=useA();const{user}=useAuth();const now=new Date();const nm=d.user.name||'User';return<header style={{...cs.fb,padding:'12px 18px',borderBottom:'1px solid var(--brd)',background:'var(--card)',position:'sticky',top:0,zIndex:50}}><button onClick={()=>setSb(s=>!s)} style={{background:'none',border:'none',color:'var(--tx)',cursor:'pointer'}}>{II.menu}</button><div style={{textAlign:'right'}}><div style={{fontSize:'13px',fontWeight:700,color:'var(--ac)'}}>Welcome {nm}!</div><div style={{fontSize:'11px',color:'var(--tx2)'}}>{now.toLocaleDateString('en-IN',{weekday:'long'})} &middot; {now.toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'})}</div></div></header>}
 
 function Dashboard(){
-const{d,ts,sI}=useA();const now=new Date();const cm=now.getMonth(),cy=now.getFullYear();
+const{d,ts,sI}=useA();const now=new Date();
+const[dm,setDm]=useState(now.getMonth());const[dy,setDy]=useState(now.getFullYear());
+const cm=dm,cy=dy;const isNow=cm===now.getMonth()&&cy===now.getFullYear();
+const prev=()=>{if(dm===0){setDm(11);setDy(dy-1)}else setDm(dm-1)};
+const next=()=>{if(dm===11){setDm(0);setDy(dy+1)}else setDm(dm+1)};
+const goNow=()=>{setDm(now.getMonth());setDy(now.getFullYear())};
 const[exS,setExS]=useState(false);const[exE,setExE]=useState(false);const[exC,setExC]=useState(false);const[si,setSi]=useState(false);const[ii,setIi]=useState('');const[exMin,setExMin]=useState(false);const[exBrk,setExBrk]=useState(false);
 const inc=d.income[`${cy}-${cm}`]||0;
 const mE=d.expenses.filter(e=>{const x=new Date(e.date);return x.getMonth()===cm&&x.getFullYear()===cy});
@@ -218,8 +223,17 @@ const ALL=tE+tF+tG+tEMI;const net=inc-ALL;const cur=d.settings.currency||'\u20B9
 const aD=MS.map((_,i)=>{const me=d.expenses.filter(e=>{const x=new Date(e.date);return x.getMonth()===i&&x.getFullYear()===cy}).reduce((s,e)=>s+Number(e.amount),0);const mf=d.fixedSpends.filter(f=>{const x=new Date(f.date);return x.getMonth()===i&&x.getFullYear()===cy}).reduce((s,e)=>s+Number(e.amount),0);return{m:MS[i],t:me+mf}});
 const mx=Math.max(...aD.map(a=>a.t),1);
 return<div>
-<div style={{...cs.fb,marginBottom:18,flexWrap:'wrap',gap:8}}><div><h2 style={{fontSize:'20px',fontWeight:700}}>{MO[cm]} {cy}</h2><div style={{fontSize:11,color:'var(--txm)'}}>Auto-selected current month</div></div>
-<div>{!si?<Bt v={inc>0?'success':'secondary'} onClick={()=>{setSi(true);setIi(inc||'')}} style={{fontSize:12}}>{inc>0?`Income: ${$(inc,cur)}`:'Set Income'}</Bt>:<div style={{display:'flex',gap:6}}><input type="number" value={ii} onChange={e=>setIi(e.target.value)} placeholder="Income" style={{...cs.input,width:130}}/><Bt onClick={()=>{sI(cm,cy,ii);setSi(false)}}>Save</Bt></div>}</div></div>
+<div style={{marginBottom:18}}>
+<div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:6}}>
+<button onClick={prev} style={{background:'var(--inp)',border:'1px solid var(--brd)',borderRadius:8,width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'var(--tx)',fontSize:16,fontWeight:700}}>{'◀'}</button>
+<div style={{textAlign:'center',flex:1}}>
+<h2 style={{fontSize:'20px',fontWeight:700,margin:0}}>{MO[cm]} {cy}</h2>
+{isNow?<div style={{fontSize:10,color:'var(--ac)',fontWeight:600}}>Current Month</div>:<button onClick={goNow} style={{background:'none',border:'none',color:'var(--ac)',fontSize:10,fontWeight:600,cursor:'pointer',textDecoration:'underline'}}>Go to Current Month</button>}
+</div>
+<button onClick={next} style={{background:'var(--inp)',border:'1px solid var(--brd)',borderRadius:8,width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'var(--tx)',fontSize:16,fontWeight:700}}>{'▶'}</button>
+</div>
+<div style={{display:'flex',justifyContent:'center'}}>{!si?<Bt v={inc>0?'success':'secondary'} onClick={()=>{setSi(true);setIi(inc||'')}} style={{fontSize:12}}>{inc>0?`Income: ${$(inc,cur)}`:'Set Income'}</Bt>:<div style={{display:'flex',gap:6}}><input type="number" value={ii} onChange={e=>setIi(e.target.value)} placeholder="Income" style={{...cs.input,width:130}}/><Bt onClick={()=>{sI(cm,cy,ii);setSi(false)}}>Save</Bt></div>}</div>
+</div>
 <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:8,marginBottom:16}}>
 <SC title="Total Expenses" value={$(ALL,cur)} icon={II.exp} color="var(--err)" sub="All categories" details={[{label:'Other Expenses',value:$(tE,cur),sub:`${mE.length} items`,color:'#6366f1'},{label:'Fixed Spends',value:$(tF,cur),sub:`${mF.length} items`,color:'#ec4899'},{label:'Grocery',value:$(tG,cur),sub:`${mG.length} items`,color:'#22c55e'},{label:'EMIs',value:$(tEMI,cur),sub:`${eT.length} entries`,color:'#8b5cf6'}]}/>
 <SC title="EMIs" value={$(tEMI,cur)} icon={II.emi} color="#8b5cf6" sub={`${pE} paid \u00B7 ${pdE} pending`} details={d.emis.map(em=>({label:em.name,sub:em.pending===0?'Done':`${em.pending} left`,value:$(em.amount,cur),color:em.pending===0?'var(--ok)':'#8b5cf6'}))}/>
