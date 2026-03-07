@@ -130,6 +130,7 @@ async function checkAndNotify() {
     const diff = Math.ceil((dd - today) / (1e3 * 60 * 60 * 24));
     const name = c.cardName || ('****' + (c.cardNumber || '').slice(-4));
     
+    if (diff === 3) reminders.push({title: 'CC Due in 3 Days', body: name + ' - Min Due: ' + fmt(c.minimumDue) + ' due ' + due.toLocaleDateString('en-IN', {day:'2-digit',month:'short'})});
     if (diff === 2) reminders.push({title: 'CC Due in 2 Days', body: name + ' - Min Due: ' + fmt(c.minimumDue) + ' due ' + due.toLocaleDateString('en-IN', {day:'2-digit',month:'short'})});
     if (diff === 1) reminders.push({title: 'CC Due Tomorrow!', body: name + ' - Min Due: ' + fmt(c.minimumDue)});
     if (diff === 0) reminders.push({title: 'CC Due Today!', body: name + ' - ' + fmt(c.minimumDue) + ' - Pay now!'});
@@ -146,6 +147,7 @@ async function checkAndNotify() {
     const thisMonthDue = new Date(now.getFullYear(), now.getMonth(), emiDay);
     const diff = Math.ceil((thisMonthDue - today) / (1e3 * 60 * 60 * 24));
     
+    if (diff === 3) reminders.push({title: 'EMI Due in 3 Days', body: em.name + ' - ' + fmt(em.amount) + ' due ' + thisMonthDue.toLocaleDateString('en-IN', {day:'2-digit',month:'short'})});
     if (diff === 2) reminders.push({title: 'EMI Due in 2 Days', body: em.name + ' - ' + fmt(em.amount) + ' due ' + thisMonthDue.toLocaleDateString('en-IN', {day:'2-digit',month:'short'})});
     if (diff === 1) reminders.push({title: 'EMI Due Tomorrow!', body: em.name + ' - ' + fmt(em.amount)});
     if (diff === 0) reminders.push({title: 'EMI Due Today!', body: em.name + ' - ' + fmt(em.amount) + ' - Pay now!'});
