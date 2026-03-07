@@ -39,6 +39,35 @@ const fbSave=(uid,data)=>{if(uid)fbDb.ref('users/'+uid+'/data').set(JSON.stringi
 const fbLoad=(uid,cb)=>{if(uid)fbDb.ref('users/'+uid+'/data').on('value',snap=>{const v=snap.val();if(v)cb(JSON.parse(v))})};
 const fbOff=(uid)=>{if(uid)fbDb.ref('users/'+uid+'/data').off()};
 
+/* Notification Reminders */
+const reqNotifPerm=async()=>{if('Notification' in window&&Notification.permission==='default'){await Notification.requestPermission()}};
+const sendNotif=(title,body)=>{if('Notification' in window&&Notification.permission==='granted'){new Notification(title,{body,icon:'./icon-192.png',badge:'./icon-192.png',vibrate:[200,100,200]})}};
+const checkReminders=(data)=>{if(!data||!('Notification' in window)||Notification.permission!=='granted')return;
+const now=new Date();const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+const in2Days=new Date(today);in2Days.setDate(in2Days.getDate()+2);
+const todayStr=today.toISOString().split('T')[0];
+const lastCheck=localStorage.getItem('te_reminder_date');
+if(lastCheck===todayStr)return;
+localStorage.setItem('te_reminder_date',todayStr);
+const reminders=[];
+(data.creditCards||[]).forEach(c=>{if(c.isPaid)return;if(!c.dueDate)return;
+const due=new Date(c.dueDate);const dd=new Date(due.getFullYear(),due.getMonth(),due.getDate());
+const diff=Math.ceil((dd-today)/(1e3*60*60*24));
+if(diff===2)reminders.push({title:'CC Due in 2 Days',body:(c.cardName||'Card')+' - Min Due: '+(data.settings?.currency||'\u20B9')+Number(c.minimumDue||0).toLocaleString('en-IN')+' due on '+due.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})});
+if(diff===1)reminders.push({title:'CC Due Tomorrow!',body:(c.cardName||'Card')+' - Min Due: '+(data.settings?.currency||'\u20B9')+Number(c.minimumDue||0).toLocaleString('en-IN')});
+if(diff===0)reminders.push({title:'CC Due Today!',body:(c.cardName||'Card')+' - Min Due: '+(data.settings?.currency||'\u20B9')+Number(c.minimumDue||0).toLocaleString('en-IN')+' - Pay now!'});
+if(diff<0&&diff>=-3)reminders.push({title:'CC Overdue!',body:(c.cardName||'Card')+' payment was due '+Math.abs(diff)+' day(s) ago'})});
+(data.emis||[]).forEach(em=>{if(!em.emiDate&&!em.startDate)return;
+const emiDay=em.emiDate?new Date(em.emiDate).getDate():new Date(em.startDate).getDate();
+const thisMonthDue=new Date(now.getFullYear(),now.getMonth(),emiDay);
+const entry=(em.entries||[]).find(en=>en.mo===now.getMonth()&&en.yr===now.getFullYear());
+if(entry&&entry.paid)return;
+const diff=Math.ceil((thisMonthDue-today)/(1e3*60*60*24));
+if(diff===2)reminders.push({title:'EMI Due in 2 Days',body:em.name+' - '+(data.settings?.currency||'\u20B9')+Number(em.amount).toLocaleString('en-IN')+' due on '+thisMonthDue.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})});
+if(diff===1)reminders.push({title:'EMI Due Tomorrow!',body:em.name+' - '+(data.settings?.currency||'\u20B9')+Number(em.amount).toLocaleString('en-IN')});
+if(diff===0)reminders.push({title:'EMI Due Today!',body:em.name+' - '+(data.settings?.currency||'\u20B9')+Number(em.amount).toLocaleString('en-IN')+' - Pay now!'})});
+reminders.forEach((r,i)=>setTimeout(()=>sendNotif(r.title,r.body),i*2000))};
+
 /* Auth Context */
 const AuthCx=createContext(null);
 const useAuth=()=>useContext(AuthCx);
@@ -129,8 +158,12 @@ function Prov({children}){
 const{user}=useAuth();
 const[d,setD]=useState(DD);const[tab,setTab]=useState('dashboard');const[sb,setSb]=useState(window.innerWidth>768);const[nf,setNf]=useState(null);const fbReady=useRef(false);
 useEffect(()=>{if(!user){setD(LD());fbReady.current=false}},[user]);
-useEffect(()=>{SD(d);if(user&&fbReady.current)fbSave(user.uid,d)},[d]);
-useEffect(()=>{if(user){fbReady.current=false;fbDb.ref('users/'+user.uid+'/data').once('value').then(snap=>{const v=snap.val();let base;if(v){try{const parsed=JSON.parse(v);base={...DD(),...parsed,settings:{...DD().settings,...(parsed.settings||{})},user:{...DD().user,...(parsed.user||{})}}}catch(e){base=LD()}}else{base=LD();fbSave(user.uid,base)}if(user.email&&!base.user.email)base.user.email=user.email;if(user.phoneNumber&&!base.user.phone)base.user.phone=user.phoneNumber;setD(base);SD(base);fbReady.current=true;fbDb.ref('users/'+user.uid+'/data').on('value',snap2=>{if(!fbReady.current)return;const v2=snap2.val();if(v2){try{const p2=JSON.parse(v2);const fd={...DD(),...p2,settings:{...DD().settings,...(p2.settings||{})},user:{...DD().user,...(p2.user||{})}};setD(prev=>{if(JSON.stringify(prev)!==JSON.stringify(fd)){SD(fd);return fd}return prev})}catch(e){}}})});return()=>{fbDb.ref('users/'+user.uid+'/data').off();fbReady.current=false}}},[user]);
+useEffect(()=>{SD(d);if(user&&fbReady.current)fbSave(user.uid,d);
+if('serviceWorker' in navigator&&navigator.serviceWorker.controller){navigator.serviceWorker.controller.postMessage({type:'STORE_DATA',payload:{creditCards:d.creditCards||[],emis:d.emis||[],currency:d.settings?.currency||'\u20B9'}})}},[d]);
+useEffect(()=>{if(user){fbReady.current=false;fbDb.ref('users/'+user.uid+'/data').once('value').then(snap=>{const v=snap.val();let base;if(v){try{const parsed=JSON.parse(v);base={...DD(),...parsed,settings:{...DD().settings,...(parsed.settings||{})},user:{...DD().user,...(parsed.user||{})}}}catch(e){base=LD()}}else{base=LD();fbSave(user.uid,base)}if(user.email&&!base.user.email)base.user.email=user.email;if(user.phoneNumber&&!base.user.phone)base.user.phone=user.phoneNumber;setD(base);SD(base);fbReady.current=true;checkReminders(base);
+if('serviceWorker' in navigator&&navigator.serviceWorker.controller){
+navigator.serviceWorker.controller.postMessage({type:'STORE_DATA',payload:{creditCards:base.creditCards||[],emis:base.emis||[],currency:base.settings?.currency||'\u20B9'}});
+navigator.serviceWorker.controller.postMessage({type:'CHECK_REMINDERS'});}fbDb.ref('users/'+user.uid+'/data').on('value',snap2=>{if(!fbReady.current)return;const v2=snap2.val();if(v2){try{const p2=JSON.parse(v2);const fd={...DD(),...p2,settings:{...DD().settings,...(p2.settings||{})},user:{...DD().user,...(p2.user||{})}};setD(prev=>{if(JSON.stringify(prev)!==JSON.stringify(fd)){SD(fd);return fd}return prev})}catch(e){}}})});return()=>{fbDb.ref('users/'+user.uid+'/data').off();fbReady.current=false}}},[user]);
 useEffect(()=>{const t=TH[d.settings.theme]||TH.Sage;Object.entries(t).forEach(([k,v])=>document.documentElement.style.setProperty(k,v));const ff=FN[d.settings.fontStyle]||FN['DM Sans'];document.documentElement.style.setProperty('--fp',ff);document.body.style.fontFamily=ff;const fz=FSZ[d.settings.fontSize]||'14px';document.documentElement.style.setProperty('--fs',fz);document.body.style.fontSize=fz},[d.settings.theme,d.settings.fontStyle,d.settings.fontSize]);
 const nt=useCallback((m,t='success')=>{setNf({m,t});setTimeout(()=>setNf(null),3e3)},[]);
 const db=useCallback((bn,a,payType)=>{setD(p=>({...p,savings:p.savings.map(s=>s.bankName===bn?{...s,balance:Math.max(0,s.balance-Number(a)),lastUpdated:new Date().toISOString(),statements:[...(s.statements||[]),{id:gi(),type:'debit',amount:Number(a),desc:payType||'Payment',date:new Date().toISOString()}]}:s)}))},[]);
@@ -422,6 +455,13 @@ const sc=[{k:'banks',l:'Banks',i:II.sav},{k:'categories',l:'Categories',i:II.exp
 return<div><h2 style={{fontSize:20,fontWeight:700,marginBottom:16}}>Settings</h2>
 {sc.map(s=><div key={s.k} style={cs.card}><button onClick={()=>oe(s.k)} style={{...cs.fb,width:'100%',background:'none',border:'none',color:'var(--tx)',cursor:'pointer'}}><div style={{display:'flex',alignItems:'center',gap:8}}><span style={{color:'var(--ac)'}}>{s.i}</span><span style={{fontWeight:600}}>{s.l}</span></div><span style={{fontSize:11,color:'var(--txm)'}}>{(d.settings[s.k]||[]).length}</span></button></div>)}
 <div style={cs.card}><button onClick={()=>setShowCardForm(true)} style={{...cs.fb,width:'100%',background:'none',border:'none',color:'var(--tx)',cursor:'pointer'}}><div style={{display:'flex',alignItems:'center',gap:8}}><span style={{color:'var(--ac)'}}>{II.cc}</span><span style={{fontWeight:600}}>Saved Cards</span></div><span style={{fontSize:11,color:'var(--txm)'}}>{(d.settings.savedCards||[]).length}</span></button></div>
+<div style={cs.card}><div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',color:'var(--tx2)',marginBottom:12}}>Reminders</div>
+<div style={{...cs.fb,padding:'8px 0',borderBottom:'1px solid var(--brd)'}}><div><div style={{fontWeight:500}}>Payment Reminders</div><div style={{fontSize:10,color:'var(--txm)'}}>Get notified 2 days before CC/EMI due dates</div></div><button onClick={()=>{if('Notification' in window){if(Notification.permission==='granted'){alert('Reminders are ON. You will get notifications 2 days before due dates.')}else if(Notification.permission==='denied'){alert('Notifications are blocked. Enable in browser Settings > Site Settings > Notifications.')}else{Notification.requestPermission().then(p=>{if(p==='granted'){alert('Reminders enabled!');checkReminders(d)}else{alert('Notifications denied. Enable in browser settings.')}})}}else{alert('Your browser does not support notifications.')}}} style={{padding:'6px 14px',borderRadius:8,border:'none',background:'Notification' in window&&Notification.permission==='granted'?'var(--ok)':'var(--ac)',color:'#fff',fontWeight:600,fontSize:12,cursor:'pointer'}}>{'Notification' in window&&Notification.permission==='granted'?String.fromCharCode(10003)+' Enabled':'Enable'}</button></div>
+{(()=>{const now2=new Date();const today2=new Date(now2.getFullYear(),now2.getMonth(),now2.getDate());const upcoming=[];
+d.creditCards.filter(c=>!c.isPaid&&c.dueDate).forEach(c=>{const due=new Date(c.dueDate);const diff=Math.ceil((due-today2)/(1e3*60*60*24));if(diff>=0&&diff<=7)upcoming.push({name:c.cardName||('****'+(c.cardNumber||'').slice(-4)),type:'CC',days:diff,amount:c.minimumDue,due:c.dueDate})});
+d.emis.forEach(em=>{const entry=(em.entries||[]).find(en=>en.mo===now2.getMonth()&&en.yr===now2.getFullYear());if(entry&&entry.paid)return;const emiDay=em.emiDate?new Date(em.emiDate).getDate():em.startDate?new Date(em.startDate).getDate():null;if(!emiDay)return;const thisMonthDue=new Date(now2.getFullYear(),now2.getMonth(),emiDay);const diff=Math.ceil((thisMonthDue-today2)/(1e3*60*60*24));if(diff>=0&&diff<=7)upcoming.push({name:em.name,type:'EMI',days:diff,amount:em.amount,due:thisMonthDue.toISOString()})});
+upcoming.sort((a,b)=>a.days-b.days);
+return upcoming.length>0?<div style={{marginTop:8}}><div style={{fontSize:10,fontWeight:700,color:'var(--tx2)',marginBottom:6}}>UPCOMING (Next 7 Days)</div>{upcoming.map((u,i)=><div key={i} style={{...cs.fb,padding:'5px 0',borderBottom:'1px solid var(--brd)',fontSize:11}}><div><span style={{fontWeight:500}}>{u.name}</span><span style={{...cs.bd,background:u.type==='CC'?'rgba(249,115,22,.12)':'rgba(139,92,246,.12)',color:u.type==='CC'?'#f97316':'#8b5cf6',marginLeft:6,fontSize:9}}>{u.type}</span></div><div style={{textAlign:'right'}}><div style={{fontWeight:600}}>{$(u.amount)}</div><div style={{fontSize:9,color:u.days<=2?'var(--err)':'var(--txm)'}}>{u.days===0?'Today!':u.days===1?'Tomorrow':u.days+' days'}</div></div></div>)}</div>:null})()}</div>
 <div style={cs.card}><div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',color:'var(--tx2)',marginBottom:12}}>App</div><div style={cs.g2}><Fl l="Currency"><input value={d.settings.currency} onChange={e=>uS({currency:e.target.value})} style={{...cs.input,width:60}}/></Fl><Fl l="Budget"><input type="number" value={d.settings.monthlyBudget||''} onChange={e=>uS({monthlyBudget:Number(e.target.value)})} style={cs.input}/></Fl></div></div>
 <div style={cs.card}><div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',color:'var(--tx2)',marginBottom:12}}>Data</div><div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
 <Bt v="secondary" onClick={()=>{const j=JSON.stringify(LD(),null,2);const b=new Blob([j],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='TE_Backup.json';document.body.appendChild(a);a.click();document.body.removeChild(a)}}>Export</Bt>
@@ -440,7 +480,7 @@ return<div><h2 style={{fontSize:20,fontWeight:700,marginBottom:16}}>Settings</h2
 <Fl l="Card Number"><input value={cardForm.cardNumber} onChange={e=>setCardForm(p=>({...p,cardNumber:e.target.value}))} style={cs.input} placeholder="Last 4 digits or full number"/></Fl>
 <div style={{display:'flex',gap:6}}><Bt onClick={()=>{if(cardForm.bankName&&cardForm.cardNumber){const cards=[...(d.settings.savedCards||[])];if(editCardIdx!==null){cards[editCardIdx]=cardForm}else{cards.push(cardForm)}uS({savedCards:cards});setEditCardIdx(null);setCardForm({bankName:'',cardName:'',cardNumber:''})}}} style={{flex:1,justifyContent:'center'}}>{editCardIdx!==null?'Update':'Add'}</Bt>{editCardIdx!==null&&<Bt v="secondary" onClick={()=>{setEditCardIdx(null);setCardForm({bankName:'',cardName:'',cardNumber:''})}}>Cancel</Bt>}</div></div></Md>}</div>}
 
-function App(){const{tab,sb}=useA();const pg={dashboard:Dashboard,expenses:Expenses,ccView:CCView,emiView:EMIView,savings:SavPage,viewSav:ViewSav,reports:Reports,display:Display,profile:Profile,settings:Settings};const P=pg[tab]||Dashboard;
+function App(){useEffect(()=>{reqNotifPerm()},[]);const{tab,sb}=useA();const pg={dashboard:Dashboard,expenses:Expenses,ccView:CCView,emiView:EMIView,savings:SavPage,viewSav:ViewSav,reports:Reports,display:Display,profile:Profile,settings:Settings};const P=pg[tab]||Dashboard;
 return<div style={{display:'flex',height:'100vh',overflow:'hidden'}}><Sidebar/><div style={{flex:1,marginLeft:sb&&window.innerWidth>768?'var(--sw)':'0',transition:'margin-left .3s',display:'flex',flexDirection:'column',overflow:'hidden'}}><Header/><main style={{flex:1,overflow:'auto',padding:'18px',maxWidth:860,width:'100%',margin:'0 auto'}}><P/></main></div><Noti/></div>}
 ReactDOM.createRoot(document.getElementById('root')).render(<AuthProvider><Prov><App/></Prov></AuthProvider>);
 </script>
@@ -448,7 +488,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(<AuthProvider><Prov>
 <script>
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('./sw.js').then(r=>console.log('SW registered')).catch(e=>console.log('SW failed',e));
+    navigator.serviceWorker.register('./sw.js').then(async r=>{
+      console.log('SW registered');
+      if('periodicSync' in r){
+        try{const status=await navigator.permissions.query({name:'periodic-background-sync'});
+        if(status.state==='granted'){await r.periodicSync.register('check-reminders',{minInterval:12*60*60*1000});console.log('Periodic sync registered')}}catch(e){console.log('Periodic sync not available')}
+      }
+    }).catch(e=>console.log('SW failed',e));
   });
 }
 </script>
