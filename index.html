@@ -35,7 +35,7 @@ const fbDb=firebase.database();
 const{useState,useEffect,useCallback,useMemo,createContext,useContext,useRef}=React;
 
 /* Firebase Helpers */
-const fbSave=(uid,data)=>{if(uid)fbDb.ref('users/'+uid+'/data').set(JSON.stringify(data))};
+const fbSave=(uid,data)=>{if(uid){console.log('FB SAVE:',Object.keys(data).map(k=>k+':'+(Array.isArray(data[k])?data[k].length:typeof data[k]==='object'?JSON.stringify(data[k]).length:'v')).join(', '));fbDb.ref('users/'+uid+'/data').set(JSON.stringify(data)).catch(e=>console.error('FB save error:',e))}};
 const fbLoad=(uid,cb)=>{if(uid)fbDb.ref('users/'+uid+'/data').on('value',snap=>{const v=snap.val();if(v)cb(JSON.parse(v))})};
 const fbOff=(uid)=>{if(uid)fbDb.ref('users/'+uid+'/data').off()};
 
@@ -181,16 +181,13 @@ function Prov({children}){
 const{user}=useAuth();
 const[d,setD]=useState(()=>{const ld=LD();return ld});const[tab,setTab]=useState('dashboard');const[sb,setSb]=useState(window.innerWidth>768);const[nf,setNf]=useState(null);const fbReady=useRef(false);const saveTimer=useRef(null);const isLoading=useRef(true);
 useEffect(()=>{if(!user){setD(LD());fbReady.current=false;isLoading.current=false}},[user]);
-useEffect(()=>{SD(d);if(user&&fbReady.current){if(saveTimer.current)clearTimeout(saveTimer.current);saveTimer.current=setTimeout(()=>{try{fbSave(user.uid,d)}catch(e){console.log('Firebase save failed',e)}},300)}
+useEffect(()=>{SD(d);if(user&&fbReady.current){if(saveTimer.current)clearTimeout(saveTimer.current);saveTimer.current=setTimeout(()=>{try{fbSave(user.uid,d)}catch(e){console.log('Firebase save failed',e)}},200)}
 if('serviceWorker' in navigator&&navigator.serviceWorker.controller){navigator.serviceWorker.controller.postMessage({type:'STORE_DATA',payload:{creditCards:d.creditCards||[],emis:d.emis||[],currency:d.settings?.currency||'\u20B9'}})}},[d]);
 useEffect(()=>{if(user){fbReady.current=false;isLoading.current=true;
 const loadLocal=()=>{const ld=LD();if(user.email&&!ld.user.email)ld.user.email=user.email;if(user.phoneNumber&&!ld.user.phone)ld.user.phone=user.phoneNumber;setD(ld);isLoading.current=false;fbReady.current=false};
 const fbTimeout=setTimeout(()=>{console.log('Firebase timeout - using local');loadLocal()},5000);
-fbDb.ref('users/'+user.uid+'/data').once('value').then(snap=>{clearTimeout(fbTimeout);const v=snap.val();let base;const local=LD();if(v){try{const parsed=JSON.parse(v);base={...DD(),...parsed,settings:deepMerge(DD().settings,parsed.settings||{}),user:{...DD().user,...(parsed.user||{})}};
-const fbHasData=(parsed.expenses&&parsed.expenses.length>0)||(parsed.creditCards&&parsed.creditCards.length>0)||(parsed.emis&&parsed.emis.length>0)||(parsed.savings&&parsed.savings.length>0);
-const localHasData=(local.expenses&&local.expenses.length>0)||(local.creditCards&&local.creditCards.length>0)||(local.emis&&local.emis.length>0)||(local.savings&&local.savings.length>0);
-if(!fbHasData&&localHasData){base=local;fbSave(user.uid,base)}}catch(e){base=local}}else{base=local;if((base.expenses&&base.expenses.length>0)||(base.creditCards&&base.creditCards.length>0))fbSave(user.uid,base)}
-if(user.email&&!base.user.email)base.user.email=user.email;if(user.phoneNumber&&!base.user.phone)base.user.phone=user.phoneNumber;setD(base);SD(base);fbReady.current=true;isLoading.current=false;checkReminders(base);
+fbDb.ref('users/'+user.uid+'/data').once('value').then(snap=>{clearTimeout(fbTimeout);const v=snap.val();let base;const local=LD();if(v){try{const parsed=JSON.parse(v);base={...DD(),...parsed,settings:deepMerge(DD().settings,parsed.settings||{}),user:{...DD().user,...(parsed.user||{})}}}catch(e){base=local}}else{base=local;try{fbSave(user.uid,base)}catch(e){}}
+if(user.email&&!base.user.email)base.user.email=user.email;if(user.phoneNumber&&!base.user.phone)base.user.phone=user.phoneNumber;console.log('FB LOADED:',{expenses:base.expenses?.length,cc:base.creditCards?.length,emis:base.emis?.length,savings:base.savings?.length,savedCards:base.settings?.savedCards?.length,icons:Object.keys(base.settings?.customIcons||{}).length,income:Object.keys(base.income||{}).length});setD(base);SD(base);fbReady.current=true;isLoading.current=false;checkReminders(base);
 if('serviceWorker' in navigator&&navigator.serviceWorker.controller){
 navigator.serviceWorker.controller.postMessage({type:'STORE_DATA',payload:{creditCards:base.creditCards||[],emis:base.emis||[],currency:base.settings?.currency||'\u20B9'}});
 navigator.serviceWorker.controller.postMessage({type:'CHECK_REMINDERS'});}fbDb.ref('users/'+user.uid+'/data').on('value',snap2=>{if(!fbReady.current||isLoading.current)return;const v2=snap2.val();if(v2){try{const p2=JSON.parse(v2);const fd={...DD(),...p2,settings:deepMerge(DD().settings,p2.settings||{}),user:{...DD().user,...(p2.user||{})}};setD(prev=>{const changed=JSON.stringify(prev)!==JSON.stringify(fd);if(changed){SD(fd);return fd}return prev})}catch(e){}}})}).catch(e=>{console.log('Firebase load failed',e);clearTimeout(fbTimeout);loadLocal()});return()=>{try{fbDb.ref('users/'+user.uid+'/data').off()}catch(e){}fbReady.current=false}}},[user]);
