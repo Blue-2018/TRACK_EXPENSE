@@ -27,6 +27,21 @@ const firebaseConfig={apiKey:"AIzaSyCvMkvLYQFi1fNa2lWp1a45E3K5h-DTtPw",authDomai
 firebase.initializeApp(firebaseConfig);
 const fbAuth=firebase.auth();
 const fbDb=firebase.database();
+
+const cloudBackup=async(uid)=>{
+const data=LD();const json=JSON.stringify(data);
+const ts=new Date().toISOString();
+await fbDb.ref('backups/'+uid+'/data').set(json);
+await fbDb.ref('backups/'+uid+'/meta').set({lastBackup:ts,size:json.length});
+localStorage.setItem('te_lastBackup',ts);
+return ts};
+const cloudRestore=async(uid)=>{
+const snap=await fbDb.ref('backups/'+uid+'/data').once('value');
+const v=snap.val();if(!v)throw{code:'not-found',message:'No backup found'};
+return JSON.parse(v)};
+const getBackupInfo=async(uid)=>{
+try{const snap=await fbDb.ref('backups/'+uid+'/meta').once('value');
+return snap.val()}catch(e){return null}};
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -35,12 +50,8 @@ const fbDb=firebase.database();
 const{useState,useEffect,useCallback,useMemo,createContext,useContext,useRef}=React;
 
 /* Firebase Helpers */
-const fbSave=(uid,data)=>{if(uid){setSyncSt('saving');console.log('FB SAVE:',Object.keys(data).map(k=>k+':'+(Array.isArray(data[k])?data[k].length:typeof data[k]==='object'?JSON.stringify(data[k]).length:'v')).join(', '));fbDb.ref('users/'+uid+'/data').set(JSON.stringify(data)).then(()=>{console.log('FB SAVED OK')}).catch(e=>{console.error('FB save error:',e)})}};
-const fbLoad=(uid,cb)=>{if(uid)fbDb.ref('users/'+uid+'/data').on('value',snap=>{const v=snap.val();if(v)cb(JSON.parse(v))})};
-const fbOff=(uid)=>{if(uid)fbDb.ref('users/'+uid+'/data').off()};
 
-/* Notification Reminders */
-const reqNotifPerm=async()=>{if('Notification' in window&&Notification.permission==='default'){await Notification.requestPermission()}};
+
 const sendNotif=(title,body)=>{if('Notification' in window&&Notification.permission==='granted'){new Notification(title,{body,icon:'./icon-192.png',badge:'./icon-192.png',vibrate:[200,100,200]})}};
 const checkReminders=(data)=>{if(!data||!('Notification' in window)||Notification.permission!=='granted')return;
 const now=new Date();const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
@@ -179,20 +190,45 @@ function RIcon({icon,size=18}){if(!icon)return<span style={{fontSize:size}}>{'�
 const Cx=createContext(null);const useA=()=>useContext(Cx);
 function Prov({children}){
 const{user}=useAuth();
-const[d,setD]=useState(()=>{const ld=LD();return ld});const[tab,setTab]=useState('dashboard');const[sb,setSb]=useState(window.innerWidth>768);const[nf,setNf]=useState(null);const fbReady=useRef(false);const saveTimer=useRef(null);const isLoading=useRef(true);const[syncSt,setSyncSt]=useState('loading');
-useEffect(()=>{if(!user){setD(LD());fbReady.current=false;isLoading.current=false;setSyncSt('no-user')}},[user]);
-useEffect(()=>{SD(d);if(user&&fbReady.current){if(saveTimer.current)clearTimeout(saveTimer.current);saveTimer.current=setTimeout(()=>{try{fbSave(user.uid,d)}catch(e){console.log('Firebase save failed',e)}},200)}
-if('serviceWorker' in navigator&&navigator.serviceWorker.controller){navigator.serviceWorker.controller.postMessage({type:'STORE_DATA',payload:{creditCards:d.creditCards||[],emis:d.emis||[],currency:d.settings?.currency||'\u20B9'}})}},[d]);
-useEffect(()=>{if(user){fbReady.current=false;isLoading.current=true;
-const loadLocal=()=>{const ld=LD();if(user.email&&!ld.user.email)ld.user.email=user.email;if(user.phoneNumber&&!ld.user.phone)ld.user.phone=user.phoneNumber;setD(ld);isLoading.current=false;fbReady.current=false};
-const fbTimeout=setTimeout(()=>{console.log('Firebase timeout - using local');setSyncSt('offline');loadLocal()},5000);
-fbDb.ref('users/'+user.uid+'/data').once('value').then(snap=>{clearTimeout(fbTimeout);const v=snap.val();let base;const local=LD();if(v){try{const parsed=JSON.parse(v);base={...DD(),...parsed,settings:deepMerge(DD().settings,parsed.settings||{}),user:{...DD().user,...(parsed.user||{})}}}catch(e){base=local}}else{base=local;try{fbSave(user.uid,base)}catch(e){}}
-if(user.email&&!base.user.email)base.user.email=user.email;if(user.phoneNumber&&!base.user.phone)base.user.phone=user.phoneNumber;setSyncSt('synced');console.log('FB LOADED:',{expenses:base.expenses?.length,cc:base.creditCards?.length,emis:base.emis?.length,savings:base.savings?.length,savedCards:base.settings?.savedCards?.length,icons:Object.keys(base.settings?.customIcons||{}).length,income:Object.keys(base.income||{}).length});setD(base);SD(base);fbReady.current=true;isLoading.current=false;checkReminders(base);
-if('serviceWorker' in navigator&&navigator.serviceWorker.controller){
-navigator.serviceWorker.controller.postMessage({type:'STORE_DATA',payload:{creditCards:base.creditCards||[],emis:base.emis||[],currency:base.settings?.currency||'\u20B9'}});
-navigator.serviceWorker.controller.postMessage({type:'CHECK_REMINDERS'});}fbDb.ref('users/'+user.uid+'/data').on('value',snap2=>{if(!fbReady.current||isLoading.current)return;const v2=snap2.val();if(v2){try{const p2=JSON.parse(v2);const fd={...DD(),...p2,settings:deepMerge(DD().settings,p2.settings||{}),user:{...DD().user,...(p2.user||{})}};setD(prev=>{const changed=JSON.stringify(prev)!==JSON.stringify(fd);if(changed){SD(fd);return fd}return prev})}catch(e){}}})}).catch(e=>{console.log('Firebase load failed',e);setSyncSt('error: '+e.message);clearTimeout(fbTimeout);loadLocal()});return()=>{try{fbDb.ref('users/'+user.uid+'/data').off()}catch(e){}fbReady.current=false}}},[user]);
-useEffect(()=>{const t=TH[d.settings.theme]||TH.Snow;Object.entries(t).forEach(([k,v])=>document.documentElement.style.setProperty(k,v));if(t['--ok'])document.documentElement.style.setProperty('--ok',t['--ok']);if(t['--warn'])document.documentElement.style.setProperty('--warn',t['--warn']);if(t['--err'])document.documentElement.style.setProperty('--err',t['--err']);const ff=FN[d.settings.fontStyle]||FN['DM Sans'];document.documentElement.style.setProperty('--fp',ff);document.body.style.fontFamily=ff;const fz=FSZ[d.settings.fontSize]||'14px';document.documentElement.style.setProperty('--fs',fz);document.body.style.fontSize=fz;const fw=FW[d.settings.fontWeight||'Normal']||FW.Normal;document.body.style.fontWeight=fw.fontWeight;document.body.style.fontStyle=fw.fontStyle},[d.settings.theme,d.settings.fontStyle,d.settings.fontSize,d.settings.fontWeight]);
+const[d,setD]=useState(()=>LD());
+const[tab,setTab]=useState('dashboard');
+const[sb,setSb]=useState(window.innerWidth>768);
+const[nf,setNf]=useState(null);
+const[syncSt,setSyncSt]=useState('local');
+const[backupInfo,setBackupInfo]=useState(null);
+
+useEffect(()=>{SD(d)},[d]);
+
+useEffect(()=>{
+if(user){
+if(user.email&&!d.user.email)setD(p=>({...p,user:{...p.user,email:user.email}}));
+if(user.phoneNumber&&!d.user.phone)setD(p=>({...p,user:{...p.user,phone:user.phoneNumber}}));
+getBackupInfo(user.uid).then(info=>{setBackupInfo(info);setSyncSt(info?'has-backup':'no-backup')}).catch(()=>setSyncSt('no-backup'));
+}else{setSyncSt('local')}
+},[user]);
+
 const nt=useCallback((m,t='success')=>{setNf({m,t});setTimeout(()=>setNf(null),3e3)},[]);
+const doBackup=useCallback(async()=>{
+if(!user){nt('Login required','error');return}
+setSyncSt('backing-up');
+try{const ts=await cloudBackup(user.uid);
+setBackupInfo({lastBackup:ts,size:JSON.stringify(d).length});
+setSyncSt('backed-up');nt('Backup saved to cloud!')}
+catch(e){setSyncSt('error');nt('Backup failed: '+e.message,'error')}
+},[user,d,nt]);
+
+const doRestore=useCallback(async()=>{
+if(!user){nt('Login required','error');return}
+setSyncSt('restoring');
+try{const data=await cloudRestore(user.uid);
+const merged={...DD(),...data,settings:deepMerge(DD().settings,data.settings||{}),user:{...DD().user,...(data.user||{})}};
+if(user.email)merged.user.email=user.email;
+setD(merged);SD(merged);
+setSyncSt('restored');nt('Data restored from cloud!')}
+catch(e){setSyncSt('error');nt('Restore failed: '+(e.code==='storage/object-not-found'?'No backup found':e.message),'error')}
+},[user,nt]);
+
+useEffect(()=>{const t=TH[d.settings.theme]||TH.Snow;Object.entries(t).forEach(([k,v])=>document.documentElement.style.setProperty(k,v));if(t['--ok'])document.documentElement.style.setProperty('--ok',t['--ok']);if(t['--warn'])document.documentElement.style.setProperty('--warn',t['--warn']);if(t['--err'])document.documentElement.style.setProperty('--err',t['--err']);const ff=FN[d.settings.fontStyle]||FN['DM Sans'];document.documentElement.style.setProperty('--fp',ff);document.body.style.fontFamily=ff;const fz=FSZ[d.settings.fontSize]||'14px';document.documentElement.style.setProperty('--fs',fz);document.body.style.fontSize=fz;const fw=FW[d.settings.fontWeight||'Normal']||FW.Normal;document.body.style.fontWeight=fw.fontWeight;document.body.style.fontStyle=fw.fontStyle},[d.settings.theme,d.settings.fontStyle,d.settings.fontSize,d.settings.fontWeight]);
 const db=useCallback((bn,a,payType)=>{setD(p=>({...p,savings:p.savings.map(s=>s.bankName===bn?{...s,balance:Math.max(0,s.balance-Number(a)),lastUpdated:new Date().toISOString(),statements:[...(s.statements||[]),{id:gi(),type:'debit',amount:Number(a),desc:payType||'Payment',date:new Date().toISOString()}]}:s)}))},[]);
 const aE=useCallback(e=>{const x={...e,id:gi()};setD(p=>({...p,expenses:[...p.expenses,x]}));if(x.paidViaBank&&x.bankName)db(x.bankName,x.amount,'Expense: '+(x.description||x.category||'Other'));nt('Expense added')},[db,nt]);
 const aEMI=useCallback(e=>{const x={...e,id:gi()};const ents=[];if(x.startDate&&x.endDate){const s=new Date(x.startDate),en=new Date(x.endDate);if(!isNaN(s)&&!isNaN(en)){let c=new Date(s);while(c<=en){ents.push({id:gi(),mo:c.getMonth(),yr:c.getFullYear(),amount:Number(x.amount),paid:false,pAmt:0});c.setMonth(c.getMonth()+1)}}}if(ents.length===0){const now2=new Date();const startM=x.startDate?new Date(x.startDate):now2;const months=x.endDate?Math.max(1,Math.ceil((new Date(x.endDate)-startM)/(1e3*60*60*24*30))):12;for(let i=0;i<months;i++){const d2=new Date(startM);d2.setMonth(d2.getMonth()+i);ents.push({id:gi(),mo:d2.getMonth(),yr:d2.getFullYear(),amount:Number(x.amount),paid:false,pAmt:0})}}x.entries=ents;x.total=ents.length;x.pending=ents.length;setD(p=>{const nd={...p,emis:[...p.emis,x]};SD(nd);return nd});nt('EMI added')},[nt]);
@@ -203,10 +239,10 @@ const aSv=useCallback(sv=>{setD(p=>({...p,savings:[...p.savings,{...sv,id:gi(),b
 const aSt=useCallback((sid,st)=>{setD(p=>({...p,savings:p.savings.map(s=>{if(s.id!==sid)return s;const nb=st.type==='credit'?s.balance+Number(st.amount):Math.max(0,s.balance-Number(st.amount));return{...s,balance:nb,lastUpdated:new Date().toISOString(),statements:[...(s.statements||[]),{...st,id:gi(),date:new Date().toISOString()}]}})}));nt('Entry added')},[nt]);
 const aGr=useCallback(g=>{setD(p=>({...p,groceries:[...p.groceries,{...g,id:gi()}]}));nt('Grocery added')},[nt]);
 const aFS=useCallback(fs=>{const x={...fs,id:gi()};setD(p=>({...p,fixedSpends:[...p.fixedSpends,x]}));if(fs.paidViaBank&&fs.bankName)db(fs.bankName,fs.amount,'Fixed: '+(fs.category||'Spend'));nt('Fixed spend added')},[db,nt]);
-const uS=useCallback(u=>{setD(p=>{const nd={...p,settings:{...p.settings,...u}};SD(nd);if(user&&fbReady.current)try{fbSave(user.uid,nd)}catch(e){}return nd})},[user]);
+const uS=useCallback(u=>setD(p=>({...p,settings:{...p.settings,...u}})),[]);
 const uU=useCallback(u=>{setD(p=>({...p,user:{...p.user,...u}}));nt('Profile saved')},[nt]);
 const dl=useCallback((t,id)=>{setD(p=>({...p,[t]:p[t].filter(i=>i.id!==id)}));nt('Deleted')},[nt]);
-const sI=useCallback((m,y,a)=>{setD(p=>{const nd={...p,income:{...p.income,[`${y}-${m}`]:Number(a)}};SD(nd);if(user&&fbReady.current)try{fbSave(user.uid,nd)}catch(e){}return nd});nt('Income set')},[nt,user]);
+const sI=useCallback((m,y,a)=>{setD(p=>({...p,income:{...p.income,[`${y}-${m}`]:Number(a)}}));nt('Income set')},[nt]);
 const ts=useMemo(()=>d.savings.reduce((s,a)=>s+Number(a.balance),0),[d.savings]);
 const edE=useCallback((id,u)=>{setD(p=>({...p,expenses:p.expenses.map(e=>e.id===id?{...e,...u}:e)}));nt('Expense updated')},[nt]);
 const edCC=useCallback((id,u)=>{setD(p=>({...p,creditCards:p.creditCards.map(c=>{if(c.id!==id)return c;const up={...c,...u};const td=Number(up.totalDue)||0;const md=Number(up.minimumDue)||0;const tp=(up.payments||[]).reduce((s,x)=>s+Number(x.amount),0);const bl=Math.max(0,td-tp);const ccSt=tp>=td?'paid':tp>=md?'minPaid':tp>0?'partial':'unpaid';return{...up,balanceAmount:bl,isPaid:tp>=td,ccStatus:ccSt}})}));nt('Card updated')},[nt]);
@@ -214,7 +250,7 @@ const edEMI=useCallback((id,u)=>{setD(p=>({...p,emis:p.emis.map(em=>{if(em.id!==
 const edGr=useCallback((id,u)=>{setD(p=>({...p,groceries:p.groceries.map(g=>g.id===id?{...g,...u}:g)}));nt('Grocery updated')},[nt]);
 const edFS=useCallback((id,u)=>{setD(p=>({...p,fixedSpends:p.fixedSpends.map(f=>f.id===id?{...f,...u}:f)}));nt('Fixed spend updated')},[nt]);
 const edSv=useCallback((id,u)=>{setD(p=>({...p,savings:p.savings.map(s=>s.id===id?{...s,...u}:s)}));nt('Account updated')},[nt]);
-return React.createElement(Cx.Provider,{value:{syncSt,d,tab,setTab,sb,setSb,nf,aE,aEMI,mEP,aCC,pCC,aSv,aSt,aGr,aFS,uS,uU,dl,sI,db,ts,nt,edE,edCC,edEMI,edGr,edFS,edSv}},children)}
+return React.createElement(Cx.Provider,{value:{syncSt,backupInfo,doBackup,doRestore,d,tab,setTab,sb,setSb,nf,aE,aEMI,mEP,aCC,pCC,aSv,aSt,aGr,aFS,uS,uU,dl,sI,db,ts,nt,edE,edCC,edEMI,edGr,edFS,edSv}},children)}
 const cs={card:{background:'var(--card)',borderRadius:'var(--rd)',padding:'16px',border:'1px solid var(--brd)',marginBottom:'12px',boxShadow:'0 2px 12px rgba(0,0,0,.04),0 1px 3px rgba(0,0,0,.06)'},input:{width:'100%',padding:'9px 12px',background:'var(--inp)',border:'1px solid var(--brd)',borderRadius:'10px',color:'var(--tx)',outline:'none'},select:{width:'100%',padding:'9px 12px',background:'var(--inp)',border:'1px solid var(--brd)',borderRadius:'10px',color:'var(--tx)',outline:'none',cursor:'pointer'},btn:{padding:'8px 16px',borderRadius:'10px',border:'none',cursor:'pointer',fontWeight:'600',display:'inline-flex',alignItems:'center',gap:'6px',transition:'all .15s'},lb:{display:'block',fontSize:'11px',fontWeight:'700',color:'var(--tx2)',marginBottom:'4px',textTransform:'uppercase',letterSpacing:'.5px'},fb:{display:'flex',justifyContent:'space-between',alignItems:'center'},g2:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'},bd:{padding:'3px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:'700'}};
 function Fl({l,children,s}){return<div style={{marginBottom:'12px',...s}}><label style={cs.lb}>{l}</label>{children}</div>}
 function Bt({children,v='primary',onClick,style,disabled}){const vs={primary:{background:'var(--ac)',color:'#fff'},secondary:{background:'var(--inp)',color:'var(--tx)'},danger:{background:'var(--err)',color:'#fff'},success:{background:'var(--ok)',color:'#fff'}};return<button onClick={onClick} disabled={disabled} style={{...cs.btn,...vs[v],opacity:disabled?.5:1,...style}}>{children}</button>}
@@ -260,15 +296,20 @@ return<Md title={titles[type]||'Edit'} onClose={onClose}>
 {type==='fixedSpends'&&<><Fl l="Category"><select value={f.category||''} onChange={e=>u('category',e.target.value)} style={cs.select}><option value="">Select</option>{d.settings.fixedCategories.map(c=>{const ic=(d.settings.customIcons||{})['fixed_'+c]||(EI.fixed||{})[c]||'📋';const show=typeof ic==='string'&&!ic.startsWith('BRAND:')?ic:'📋';return<option key={c}>{show} {c}</option>})}</select></Fl><Fl l="Amount"><input type="number" value={f.amount||''} onChange={e=>u('amount',e.target.value)} style={cs.input}/></Fl><Fl l="Date"><input type="date" value={fmtD(f.date)} onChange={e=>u('date',e.target.value)} style={cs.input}/></Fl><Fl l="Payment Mode"><select value={f.paymentMode||''} onChange={e=>u('paymentMode',e.target.value)} style={cs.select}><option value="">Select</option>{d.settings.paymentMethods.map(p=>{const ic=(d.settings.customIcons||{})['payment_'+p]||(EI.payment||{})[p]||'💳';const show=typeof ic==='string'&&!ic.startsWith('BRAND:')?ic:'💳';return<option key={p}>{show} {p}</option>})}</select></Fl>{BNK(f.paymentMode)&&<Fl l="Bank"><select value={f.bankName||''} onChange={e=>u('bankName',e.target.value)} style={cs.select}><option value="">Select</option>{d.settings.banks.map(b=>{const ic=(d.settings.customIcons||{})['savings_'+b]||(EI.savings||{})[b]||'🏦';const show=typeof ic==='string'&&!ic.startsWith('BRAND:')?ic:'🏦';return<option key={b}>{show} {b}</option>})}</select></Fl>}</>}
 {type==='savings'&&<><Fl l="Bank Name"><select value={f.bankName||''} onChange={e=>u('bankName',e.target.value)} style={cs.select}><option value="">Select</option>{d.settings.banks.map(b=>{const ic=(d.settings.customIcons||{})['savings_'+b]||(EI.savings||{})[b]||'🏦';const show=typeof ic==='string'&&!ic.startsWith('BRAND:')?ic:'🏦';return<option key={b}>{show} {b}</option>})}</select></Fl><Fl l="Current Balance"><input type="number" value={f.balance||''} onChange={e=>u('balance',e.target.value)} style={cs.input}/></Fl><div style={{padding:10,background:'var(--inp)',borderRadius:9,marginTop:4,border:'1px solid var(--brd)'}}><div style={{fontSize:10,fontWeight:700,color:'var(--txm)',textTransform:'uppercase',marginBottom:4}}>Info</div><div style={{fontSize:12,color:'var(--tx2)'}}>Statements: {(f.statements||[]).length} &middot; Last updated: {fd(f.lastUpdated)}</div></div></>}
 <Bt onClick={save} style={{width:'100%',justifyContent:'center',marginTop:8}}>Save Changes</Bt></Md>}
-function Sidebar(){const{tab,setTab,sb,setSb,syncSt}=useA();const{user,logout}=useAuth();const mob=window.innerWidth<=768;
+function Sidebar(){const{tab,setTab,sb,setSb,syncSt,doBackup,doRestore}=useA();const{user,logout}=useAuth();const mob=window.innerWidth<=768;
 const nav=[{id:'dashboard',l:'Dashboard',i:II.dash},{id:'expenses',l:'Expenses',i:II.exp},{id:'ccView',l:'Credit Cards',i:II.cc},{id:'emiView',l:'EMIs',i:II.emi},{id:'savings',l:'Savings',i:II.sav},{id:'viewSav',l:'View Savings',i:II.eye},{id:'reports',l:'Reports',i:II.rpt},{div:1},{id:'display',l:'Display',i:II.disp},{id:'profile',l:'User',i:II.user},{id:'settings',l:'Settings',i:II.gear}];
 return<>{mob&&sb&&<div onClick={()=>setSb(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.3)',zIndex:99}}/>}<aside style={{position:'fixed',left:0,top:0,bottom:0,width:'var(--sw)',background:'var(--sbg)',borderRight:'1px solid var(--brd)',zIndex:100,display:'flex',flexDirection:'column',padding:'14px 8px',transform:sb?'translateX(0)':'translateX(-100%)',transition:'transform .3s',overflowY:'auto'}}>
 <div style={{...cs.fb,padding:'2px 10px',marginBottom:20}}><div style={{display:'flex',alignItems:'center',gap:8}}><img src='./icon-192.png' style={{width:32,height:32,borderRadius:8,objectFit:'cover'}}/><div><div style={{fontWeight:700,fontSize:14}}>Track Expense</div>{user&&<div style={{fontSize:9,color:'var(--txm)',maxWidth:150,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user.email||user.phoneNumber||''}</div>}</div></div>{mob&&<button onClick={()=>setSb(false)} style={{background:'none',border:'none',color:'var(--txm)',cursor:'pointer'}}>{II.x}</button>}</div>
 <nav style={{flex:1}}>{nav.map((n,i)=>n.div?<div key={i} style={{height:1,background:'var(--brd)',margin:'10px 8px'}}/>:<button key={n.id} onClick={()=>{setTab(n.id);if(mob)setSb(false)}} style={{width:'100%',display:'flex',alignItems:'center',gap:9,padding:'10px 12px',borderRadius:10,border:tab===n.id?'1px solid var(--ac)':'1px solid transparent',borderLeft:tab===n.id?'3px solid var(--ac)':'3px solid transparent',background:tab===n.id?'var(--acl)':'transparent',color:tab===n.id?'var(--ac)':'var(--tx2)',fontWeight:tab===n.id?700:500,fontSize:'13px',cursor:'pointer',marginBottom:3,transition:'all .15s'}}>{n.i}{n.l}</button>)}</nav>
 <div style={{padding:'10px 12px',borderTop:'1px solid var(--brd)'}}>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-<div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:6,height:6,borderRadius:'50%',background:syncSt==='synced'?'var(--ok)':syncSt==='saving'?'var(--warn)':syncSt==='loading'?'var(--warn)':'var(--err)'}}/><span style={{fontSize:9,color:'var(--txm)'}}>{syncSt==='synced'?'Synced':syncSt==='saving'?'Saving...':syncSt==='loading'?'Loading...':syncSt==='offline'?'Offline':syncSt.startsWith('error')?'Sync Error':'Local'}</span></div>
-<span style={{fontSize:10,color:'var(--txm)'}}>v2.0</span></div><button onClick={()=>{if(confirm('Sign out?'))logout()}} style={{background:'none',border:'none',color:'var(--err)',cursor:'pointer',fontSize:11,fontWeight:600}}>Sign Out</button></div></aside></>}
+<div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:6,height:6,borderRadius:'50%',background:syncSt==='backed-up'||syncSt==='restored'||syncSt==='has-backup'?'var(--ok)':syncSt==='backing-up'||syncSt==='restoring'?'var(--warn)':'var(--txm)'}}/><span style={{fontSize:9,color:'var(--txm)'}}>{syncSt==='backed-up'?'Backed up':syncSt==='restored'?'Restored':syncSt==='backing-up'?'Backing up...':syncSt==='restoring'?'Restoring...':syncSt==='has-backup'?'Backup available':syncSt==='error'?'Error':'Local'}</span></div>
+<span style={{fontSize:10,color:'var(--txm)'}}>v2.0</span></div><button onClick={()=>{if(confirm('Sign out?'))logout()}} style={{background:'none',border:'none',color:'var(--err)',cursor:'pointer',fontSize:11,fontWeight:600}}>Sign Out</button></div>
+{user&&<div style={{display:'flex',gap:4,padding:'0 12px 8px'}}>
+<button onClick={doBackup} style={{flex:1,padding:'6px 0',borderRadius:6,border:'1px solid var(--brd)',background:'var(--inp)',color:'var(--ac)',cursor:'pointer',fontSize:10,fontWeight:600}}>Backup</button>
+<button onClick={doRestore} style={{flex:1,padding:'6px 0',borderRadius:6,border:'1px solid var(--brd)',background:'var(--inp)',color:'var(--ac)',cursor:'pointer',fontSize:10,fontWeight:600}}>Restore</button>
+</div>}
+</aside></>}
 
 function Header(){const{setSb,d,ts}=useA();const{user}=useAuth();const now=new Date();const nm=d.user.name||'User';const cur=d.settings.currency||'₹';
 const mE=d.expenses.filter(e=>{const x=new Date(e.date);return x.getMonth()===now.getMonth()&&x.getFullYear()===now.getFullYear()}).reduce((s,e)=>s+Number(e.amount),0);
@@ -560,7 +601,7 @@ return<Md title={`Icon for ${name}`} onClose={onClose}>
 <Bt onClick={saveCustom} style={{width:'100%',justifyContent:'center'}}>{custom?'Save Icon':'Enter an icon first'}</Bt>
 <div style={{marginTop:12,borderTop:'1px solid var(--brd)',paddingTop:10}}><div style={{fontSize:10,fontWeight:700,color:'var(--txm)',marginBottom:6}}>QUICK PICK</div><div style={{display:'flex',flexWrap:'wrap',gap:4}}>{['💰','💵','💳','💸','🏦','🏠','🚗','🍔','🛒','📱','⚡','🔥','💧','🥛','🧹','❤️','🎁','🚀','💎','👑','💡','📝','🎯','⭐','🎉','🌍','💼','📦','🔑','🛡️'].map((e,i)=><button key={i} onClick={()=>setCustom(e)} style={{width:38,height:38,borderRadius:8,border:custom===e?'2px solid var(--ac)':'1px solid var(--brd)',background:custom===e?'var(--acl)':'var(--inp)',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}}>{e}</button>)}</div></div></div>}
 <div style={{marginTop:12,paddingTop:10,borderTop:'1px solid var(--brd)'}}><Bt v="secondary" onClick={()=>{const ci={...(d.settings.customIcons||{})};delete ci[type+'_'+name];uS({customIcons:ci});onClose()}} style={{width:'100%',justifyContent:'center',fontSize:11}}>Reset to Default</Bt></div></Md>}
-function Settings(){const{d,uS}=useA();const[es,setEs]=useState(null);const[tl,setTl]=useState([]);const[ni,setNi]=useState('');const[iconPick,setIconPick]=useState(null);
+function Settings(){const{d,uS,doBackup,doRestore,syncSt,backupInfo}=useA();const bk=doBackup,rs=doRestore,bkSt=syncSt,bkInfo=backupInfo;const[es,setEs]=useState(null);const[tl,setTl]=useState([]);const[ni,setNi]=useState('');const[iconPick,setIconPick]=useState(null);
 const oe=k=>{setEs(k);setTl([...(d.settings[k]||[])]);setNi('')};const sv=k=>{uS({[k]:tl});setEs(null)};
 const sc=[{k:'banks',l:'Banks',i:II.sav},{k:'categories',l:'Categories',i:II.exp},{k:'paymentMethods',l:'Payment Methods',i:II.cc},{k:'fixedCategories',l:'Fixed Categories',i:II.emi}];const[showCardForm,setShowCardForm]=useState(false);const[cardForm,setCardForm]=useState({bankName:'',cardName:'',cardNumber:''});const[editCardIdx,setEditCardIdx]=useState(null);const[cardList,setCardList]=useState([...(d.settings.savedCards||[])]);
 return<div><h2 style={{fontSize:20,fontWeight:700,marginBottom:16}}>Settings</h2>
@@ -584,6 +625,17 @@ d.emis.forEach(em=>{const entry=(em.entries||[]).find(en=>en.mo===now2.getMonth(
 upcoming.sort((a,b)=>a.days-b.days);
 return upcoming.length>0?<div style={{marginTop:8}}><div style={{fontSize:10,fontWeight:700,color:'var(--tx2)',marginBottom:6}}>UPCOMING (Next 7 Days)</div>{upcoming.map((u,i)=><div key={i} style={{...cs.fb,padding:'5px 0',borderBottom:'1px solid var(--brd)',fontSize:11}}><div><span style={{fontWeight:500}}>{u.name}</span><span style={{...cs.bd,background:u.type==='CC'?'rgba(249,115,22,.12)':'rgba(139,92,246,.12)',color:u.type==='CC'?'#f97316':'#8b5cf6',marginLeft:6,fontSize:9}}>{u.type}</span></div><div style={{textAlign:'right'}}><div style={{fontWeight:600}}>{$(u.amount)}</div><div style={{fontSize:9,color:u.days<=2?'var(--err)':'var(--txm)'}}>{u.days===0?'Today!':u.days===1?'Tomorrow':u.days+' days'}</div></div></div>)}</div>:null})()}</div>
 <div style={cs.card}><div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',color:'var(--tx2)',marginBottom:12}}>App</div><div style={cs.g2}><Fl l="Currency"><input value={d.settings.currency} onChange={e=>uS({currency:e.target.value})} style={{...cs.input,width:60}}/></Fl><Fl l="Budget"><input type="number" value={d.settings.monthlyBudget||''} onChange={e=>uS({monthlyBudget:Number(e.target.value)})} style={cs.input}/></Fl></div></div>
+<div style={cs.card}><div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',color:'var(--tx2)',marginBottom:12}}>Cloud Backup & Restore</div>
+<div>
+<p style={{fontSize:11,color:'var(--txm)',marginBottom:10}}>Backup your data to cloud. Restore on any device by logging in with the same account.</p>
+{bkInfo&&<div style={{padding:8,background:'var(--inp)',borderRadius:8,marginBottom:10,fontSize:11}}>
+<div style={{...cs.fb}}><span style={{color:'var(--tx2)'}}>Last backup:</span><span style={{fontWeight:600}}>{new Date(bkInfo.lastBackup).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span></div>
+<div style={{...cs.fb,marginTop:2}}><span style={{color:'var(--tx2)'}}>Size:</span><span style={{fontWeight:600}}>{(bkInfo.size/1024).toFixed(0)} KB</span></div>
+</div>}
+<div style={{display:'flex',gap:8}}>
+<Bt onClick={bk} style={{flex:1,justifyContent:'center'}}>{bkSt==='backing-up'?'Backing up...':'Backup to Cloud'}</Bt>
+<Bt v="secondary" onClick={()=>{if(confirm('This will replace all current data with the cloud backup. Continue?'))rs()}} style={{flex:1,justifyContent:'center'}}>{bkSt==='restoring'?'Restoring...':'Restore from Cloud'}</Bt>
+</div></div></div>
 <div style={cs.card}><div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',color:'var(--tx2)',marginBottom:12}}>Data</div><div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
 <Bt v="secondary" onClick={()=>{const j=JSON.stringify(LD(),null,2);const b=new Blob([j],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='TE_Backup.json';document.body.appendChild(a);a.click();document.body.removeChild(a)}}>Export</Bt>
 <Bt v="secondary" onClick={()=>{const i=document.createElement('input');i.type='file';i.accept='.json';i.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{try{localStorage.setItem(SK,ev.target.result);window.location.reload()}catch{alert('Bad file')}};r.readAsText(f)};i.click()}}>Import</Bt>
