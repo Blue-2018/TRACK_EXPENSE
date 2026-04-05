@@ -26,9 +26,10 @@ input,select,textarea,button{font-family:inherit;font-size:inherit}
 const firebaseConfig={apiKey:"AIzaSyCvMkvLYQFi1fNa2lWp1a45E3K5h-DTtPw",authDomain:"myexpense-project.firebaseapp.com",databaseURL:"https://myexpense-project-default-rtdb.firebaseio.com",projectId:"myexpense-project",storageBucket:"myexpense-project.firebasestorage.app",messagingSenderId:"1059514064032",appId:"1:1059514064032:web:105733e8021c8087b73dc5",measurementId:"G-8TS0ERZVC0"};
 firebase.initializeApp(firebaseConfig);
 const fbAuth=firebase.auth();
-const fbDb=firebase.database();
+let fbDb;try{fbDb=firebase.database()}catch(e){console.error('Firebase DB init failed:',e);fbDb=null}
 
 const cloudBackup=async(uid)=>{
+if(!fbDb)throw new Error('Database not available');
 const data=LD();const json=JSON.stringify(data);
 const ts=new Date().toISOString();
 await fbDb.ref('backups/'+uid+'/data').set(json);
@@ -36,11 +37,12 @@ await fbDb.ref('backups/'+uid+'/meta').set({lastBackup:ts,size:json.length});
 localStorage.setItem('te_lastBackup',ts);
 return ts};
 const cloudRestore=async(uid)=>{
+if(!fbDb)throw new Error('Database not available');
 const snap=await fbDb.ref('backups/'+uid+'/data').once('value');
 const v=snap.val();if(!v)throw{code:'not-found',message:'No backup found'};
 return JSON.parse(v)};
 const getBackupInfo=async(uid)=>{
-try{const snap=await fbDb.ref('backups/'+uid+'/meta').once('value');
+if(!fbDb)return null;try{const snap=await fbDb.ref('backups/'+uid+'/meta').once('value');
 return snap.val()}catch(e){return null}};
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'te-v6';
+const CACHE_NAME = 'te-v9';
 const URLS_TO_CACHE = [
   './',
   './index.html',
@@ -15,6 +15,12 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('activate', event => {
+  // Force clear ALL old caches
+  event.waitUntil(
+    caches.keys().then(names => Promise.all(
+      names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n))
+    )).then(() => self.clients.claim())
+  );
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
@@ -124,7 +130,9 @@ async function checkAndNotify() {
   
   // Check Credit Cards
   (data.creditCards || []).forEach(c => {
-    if (c.isPaid || !c.dueDate) return;
+    if (c.isPaid || c.ccStatus === 'minPaid' || c.ccStatus === 'paid' || !c.dueDate) return;
+    const totalPaid = (c.payments || []).reduce((s, x) => s + Number(x.amount), 0);
+    if (c.ccStatus === 'partial' && totalPaid >= Number(c.minimumDue || 0)) return;
     const due = new Date(c.dueDate);
     const dd = new Date(due.getFullYear(), due.getMonth(), due.getDate());
     const diff = Math.ceil((dd - today) / (1e3 * 60 * 60 * 24));
